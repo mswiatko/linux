@@ -5243,21 +5243,21 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
 	if (err)
 		goto err_init_eth;
 
-	err = ice_init_rdma(pf);
-	if (err)
-		goto err_init_rdma;
-
 	err = ice_init_devlink(pf);
 	if (err)
 		goto err_init_devlink;
+
+	err = ice_init_rdma(pf);
+	if (err)
+		goto err_init_rdma;
 
 	ice_init_features(pf);
 
 	return 0;
 
-err_init_devlink:
-	ice_deinit_rdma(pf);
 err_init_rdma:
+	ice_deinit_devlink(pf);
+err_init_devlink:
 	ice_deinit_eth(pf);
 err_init_eth:
 	ice_deinit(pf);
@@ -5358,8 +5358,8 @@ static void ice_remove(struct pci_dev *pdev)
 	if (!ice_is_safe_mode(pf))
 		ice_remove_arfs(pf);
 	ice_deinit_features(pf);
-	ice_deinit_devlink(pf);
 	ice_deinit_rdma(pf);
+	ice_deinit_devlink(pf);
 	ice_deinit_eth(pf);
 	ice_deinit(pf);
 
