@@ -686,3 +686,18 @@ int ice_eswitch_rebuild(struct ice_pf *pf)
 
 	return 0;
 }
+
+struct net_device *ice_eswitch_get_target(struct ice_rx_ring *rx_ring,
+					    union ice_32b_rx_flex_desc *rx_desc)
+{
+	struct ice_eswitch *eswitch = &rx_ring->vsi->back->eswitch;
+	struct ice_32b_rx_flex_desc_nic_2 *desc =
+		(struct ice_32b_rx_flex_desc_nic_2 *)rx_desc;
+	struct ice_repr *repr;
+
+	repr = xa_load(&eswitch->reprs, le16_to_cpu(desc->src_vsi));
+	if (!repr)
+		return rx_ring->netdev;
+
+	return repr->netdev;
+}

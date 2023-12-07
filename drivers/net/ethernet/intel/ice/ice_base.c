@@ -493,6 +493,7 @@ static int ice_setup_rx_ctx(struct ice_rx_ring *ring)
 					false);
 		break;
 	case ICE_VSI_SWITCHDEV_CTRL:
+		ring->flags |= ICE_RX_FLAGS_MULTIDEV;
 		ice_write_qrxflxp_cntxt(hw, pf_q, ICE_RXDID_FLEX_NIC_2, 0x3,
 					true);
 		break;
