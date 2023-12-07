@@ -427,6 +427,7 @@ static struct ice_repr *ice_repr_create(struct ice_vsi *src_vsi)
 	}
 
 	repr->src_vsi = src_vsi;
+	repr->id = src_vsi->vsi_num;
 	np = netdev_priv(repr->netdev);
 	np->repr = repr;
 	np->vsi = src_vsi;
