@@ -439,6 +439,8 @@ static void ice_eswitch_napi_disable(struct xarray *reprs)
 static int ice_eswitch_enable_switchdev(struct ice_pf *pf)
 {
 	struct ice_vsi *ctrl_vsi, *uplink_vsi;
+	struct ice_repr *uplink_repr;
+	int err = -ENODEV;
 
 	uplink_vsi = ice_get_main_vsi(pf);
 	if (!uplink_vsi)
@@ -450,11 +452,22 @@ static int ice_eswitch_enable_switchdev(struct ice_pf *pf)
 		return -EINVAL;
 	}
 
-	pf->eswitch.control_vsi = ice_eswitch_vsi_setup(pf, pf->hw.port_info);
-	if (!pf->eswitch.control_vsi)
+	ctrl_vsi = ice_eswitch_vsi_setup(pf, pf->hw.port_info);
+	if (!ctrl_vsi)
 		return -ENODEV;
+	pf->eswitch.control_vsi = ctrl_vsi;
 
-	ctrl_vsi = pf->eswitch.control_vsi;
+	uplink_repr = ice_repr_create_uplink(pf->eswitch.control_vsi);
+	if (IS_ERR(uplink_repr)) {
+		err = PTR_ERR(uplink_repr);
+		goto err_create_uplink;
+	}
+	pf->eswitch.uplink_repr = uplink_repr;
+
+	err = uplink_repr->ops.add(uplink_repr);
+	if (err)
+		goto err_add_uplink;
+
 	/* cp VSI is createad with 1 queue as default */
 	pf->eswitch.qs.value = 1;
 	pf->eswitch.uplink_vsi = uplink_vsi;
@@ -472,8 +485,12 @@ static int ice_eswitch_enable_switchdev(struct ice_pf *pf)
 err_br_offloads:
 	ice_eswitch_release_env(pf);
 err_vsi:
+	uplink_repr->ops.rem(uplink_repr);
+err_add_uplink:
+	ice_repr_destroy(uplink_repr);
+err_create_uplink:
 	ice_vsi_release(ctrl_vsi);
-	return -ENODEV;
+	return err;
 }
 
 /**
@@ -482,10 +499,13 @@ err_vsi:
  */
 static void ice_eswitch_disable_switchdev(struct ice_pf *pf)
 {
+	struct ice_repr *uplink_repr = pf->eswitch.uplink_repr;
 	struct ice_vsi *ctrl_vsi = pf->eswitch.control_vsi;
 
 	ice_eswitch_br_offloads_deinit(pf);
 	ice_eswitch_release_env(pf);
+	uplink_repr->ops.rem(uplink_repr);
+	ice_repr_destroy(uplink_repr);
 	ice_vsi_release(ctrl_vsi);
 
 	pf->eswitch.is_running = false;

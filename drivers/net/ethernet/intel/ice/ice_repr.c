@@ -122,6 +122,20 @@ static int ice_repr_sf_open(struct net_device *netdev)
 	return 0;
 }
 
+static int ice_repr_uplink_open(struct net_device *netdev)
+{
+	struct ice_repr *repr = ice_netdev_to_repr(netdev);
+	int err = ice_vsi_open(repr->src_vsi);
+
+	if (err)
+		return err;
+
+	netif_carrier_on(netdev);
+	netif_tx_start_all_queues(netdev);
+
+	return 0;
+}
+
 /**
  * ice_repr_vf_stop - Disable port representor's network interface
  * @netdev: network interface device structure
@@ -150,6 +164,18 @@ static int ice_repr_vf_stop(struct net_device *netdev)
 
 static int ice_repr_sf_stop(struct net_device *netdev)
 {
+	netif_carrier_off(netdev);
+	netif_tx_stop_all_queues(netdev);
+
+	return 0;
+}
+
+static int ice_repr_uplink_stop(struct net_device *netdev)
+{
+	struct ice_repr *repr = ice_netdev_to_repr(netdev);
+
+	ice_vsi_close(repr->src_vsi);
+
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
 
@@ -282,6 +308,13 @@ static const struct net_device_ops ice_repr_sf_netdev_ops = {
 	.ndo_get_offload_stats = ice_repr_ndo_get_offload_stats,
 };
 
+static const struct net_device_ops ice_repr_uplink_netdev_ops = {
+	.ndo_get_phys_port_name = ice_repr_get_phys_port_name,
+	.ndo_open = ice_repr_uplink_open,
+	.ndo_stop = ice_repr_uplink_stop,
+	.ndo_start_xmit = ice_start_xmit,
+};
+
 /**
  * ice_is_port_repr_netdev - Check if a given netdevice is a port representor netdev
  * @netdev: pointer to netdev
@@ -329,6 +362,11 @@ static int ice_repr_ready_sf(struct ice_repr *repr)
 	return !repr->sf->active;
 }
 
+static int ice_repr_ready_uplink(struct ice_repr *repr)
+{
+	return true;
+}
+
 /**
  * ice_repr_destroy - remove representor from VF
  * @repr: pointer to representor structure
@@ -351,6 +389,11 @@ static void ice_repr_rem_vf(struct ice_repr *repr)
 static void ice_repr_rem_sf(struct ice_repr *repr)
 {
 	ice_repr_remove_node(&repr->sf->devlink_port);
+	unregister_netdev(repr->netdev);
+}
+
+static void ice_repr_rem_uplink(struct ice_repr *repr)
+{
 	unregister_netdev(repr->netdev);
 }
 
@@ -488,6 +531,30 @@ struct ice_repr *ice_repr_create_sf(struct ice_dynamic_port *sf)
 	repr->ops.ready = ice_repr_ready_sf;
 
 	ether_addr_copy(repr->parent_mac, sf->hw_addr);
+
+	return repr;
+}
+
+static int ice_repr_add_uplink(struct ice_repr *repr)
+{
+	ice_napi_add(repr->src_vsi);
+
+	return ice_repr_reg_netdev(repr->netdev, &ice_repr_uplink_netdev_ops);
+}
+
+struct ice_repr *ice_repr_create_uplink(struct ice_vsi *vsi)
+{
+	struct ice_repr *repr = ice_repr_create(vsi);
+
+	if (!repr)
+		return ERR_PTR(-ENOMEM);
+
+	repr->type = ICE_REPR_TYPE_UPLINK;
+	repr->ops.add = ice_repr_add_uplink;
+	repr->ops.rem = ice_repr_rem_uplink;
+	repr->ops.ready = ice_repr_ready_uplink;
+
+	vsi->netdev = repr->netdev;
 
 	return repr;
 }
