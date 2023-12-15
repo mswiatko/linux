@@ -534,12 +534,6 @@ struct ice_eswitch {
 	struct ice_repr *uplink_repr;
 	struct xarray reprs;
 	bool is_running;
-	/* struct to allow cp queues management optimization */
-	struct {
-		int to_reach;
-		int value;
-		bool is_reaching;
-	} qs;
 };
 
 struct ice_agg_node {

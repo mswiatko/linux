@@ -467,9 +467,6 @@ static int ice_eswitch_enable_switchdev(struct ice_pf *pf)
 	err = uplink_repr->ops.add(uplink_repr);
 	if (err)
 		goto err_add_uplink;
-
-	/* cp VSI is createad with 1 queue as default */
-	pf->eswitch.qs.value = 1;
 	pf->eswitch.uplink_vsi = uplink_vsi;
 
 	if (ice_eswitch_setup_env(pf))
@@ -509,7 +506,6 @@ static void ice_eswitch_disable_switchdev(struct ice_pf *pf)
 	ice_vsi_release(ctrl_vsi);
 
 	pf->eswitch.is_running = false;
-	pf->eswitch.qs.is_reaching = false;
 }
 
 /**
@@ -634,43 +630,9 @@ static void ice_eswitch_start_reprs(struct ice_pf *pf)
 	ice_eswitch_add_sp_rules(pf);
 }
 
-static void
-ice_eswitch_cp_change_queues(struct ice_eswitch *eswitch, int change)
-{
-	struct ice_vsi *cp = eswitch->control_vsi;
-	int queues = 0;
-
-	if (eswitch->qs.is_reaching) {
-		if (eswitch->qs.to_reach >= eswitch->qs.value + change) {
-			queues = eswitch->qs.to_reach;
-			eswitch->qs.is_reaching = false;
-		} else {
-			queues = 0;
-		}
-	} else if ((change > 0 && cp->alloc_txq <= eswitch->qs.value) ||
-		   change < 0) {
-		queues = cp->alloc_txq + change;
-	}
-
-	if (queues) {
-		cp->req_txq = queues;
-		cp->req_rxq = queues;
-		ice_vsi_close(cp);
-		ice_vsi_rebuild(cp, ICE_VSI_FLAG_NO_INIT);
-		ice_vsi_open(cp);
-	} else if (!change) {
-		/* change == 0 means that VSI wasn't open, open it here */
-		ice_vsi_open(cp);
-	}
-
-	eswitch->qs.value += change;
-	ice_eswitch_remap_rings_to_vectors(eswitch);
-}
-
 static int
 ice_eswitch_attach(struct ice_pf *pf, struct ice_repr *repr, unsigned long *id)
 {
-	int change = 1;
 	int err;
 
 	if (pf->eswitch_mode == DEVLINK_ESWITCH_MODE_LEGACY)
@@ -680,9 +642,6 @@ ice_eswitch_attach(struct ice_pf *pf, struct ice_repr *repr, unsigned long *id)
 		err = ice_eswitch_enable_switchdev(pf);
 		if (err)
 			return err;
-		/* Control plane VSI is created with 1 queue as default */
-		pf->eswitch.qs.to_reach -= 1;
-		change = 0;
 	}
 
 	ice_eswitch_stop_reprs(pf);
@@ -702,7 +661,7 @@ ice_eswitch_attach(struct ice_pf *pf, struct ice_repr *repr, unsigned long *id)
 
 	*id = repr->id;
 
-	ice_eswitch_cp_change_queues(&pf->eswitch, change);
+	ice_eswitch_remap_rings_to_vectors(&pf->eswitch);
 	ice_eswitch_start_reprs(pf);
 
 	return 0;
@@ -756,8 +715,6 @@ static void ice_eswitch_detach(struct ice_pf *pf, struct ice_repr *repr)
 
 	if (xa_empty(&pf->eswitch.reprs))
 		ice_eswitch_disable_switchdev(pf);
-	else
-		ice_eswitch_cp_change_queues(&pf->eswitch, -1);
 
 	ice_eswitch_release_repr(pf, repr);
 	repr->ops.rem(repr);
@@ -819,20 +776,4 @@ int ice_eswitch_rebuild(struct ice_pf *pf)
 		ice_eswitch_detach(pf, repr);
 
 	return 0;
-}
-
-/**
- * ice_eswitch_reserve_cp_queues - reserve control plane VSI queues
- * @pf: pointer to PF structure
- * @change: how many more (or less) queues is needed
- *
- * Remember to call ice_eswitch_attach/detach() the "change" times.
- */
-void ice_eswitch_reserve_cp_queues(struct ice_pf *pf, int change)
-{
-	if (pf->eswitch.qs.value + change < 0)
-		return;
-
-	pf->eswitch.qs.to_reach = pf->eswitch.qs.value + change;
-	pf->eswitch.qs.is_reaching = true;
 }
