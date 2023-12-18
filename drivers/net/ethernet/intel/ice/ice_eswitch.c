@@ -152,61 +152,6 @@ err_def_rx:
 }
 
 /**
- * ice_eswitch_remap_rings_to_vectors - reconfigure rings of eswitch ctrl VSI
- * @eswitch: pointer to eswitch struct
- *
- * In eswitch number of allocated Tx/Rx rings is equal.
- *
- * This function fills q_vectors structures associated with representor and
- * move each ring pairs to port representor netdevs. Each port representor
- * will have dedicated 1 Tx/Rx ring pair, so number of rings pair is equal to
- * number of VFs.
- */
-static void ice_eswitch_remap_rings_to_vectors(struct ice_eswitch *eswitch)
-{
-	struct ice_vsi *vsi = eswitch->control_vsi;
-	unsigned long repr_id = 0;
-	int q_id;
-
-	ice_for_each_txq(vsi, q_id) {
-		struct ice_q_vector *q_vector;
-		struct ice_tx_ring *tx_ring;
-		struct ice_rx_ring *rx_ring;
-		struct ice_repr *repr;
-
-		repr = xa_find(&eswitch->reprs, &repr_id, U32_MAX,
-			       XA_PRESENT);
-		if (!repr)
-			break;
-
-		repr_id += 1;
-		repr->q_id = q_id;
-		q_vector = repr->q_vector;
-		tx_ring = vsi->tx_rings[q_id];
-		rx_ring = vsi->rx_rings[q_id];
-
-		q_vector->vsi = vsi;
-		q_vector->reg_idx = vsi->q_vectors[0]->reg_idx;
-
-		q_vector->num_ring_tx = 1;
-		q_vector->tx.tx_ring = tx_ring;
-		tx_ring->q_vector = q_vector;
-		tx_ring->next = NULL;
-		tx_ring->netdev = repr->netdev;
-		/* In switchdev mode, from OS stack perspective, there is only
-		 * one queue for given netdev, so it needs to be indexed as 0.
-		 */
-		tx_ring->q_index = 0;
-
-		q_vector->num_ring_rx = 1;
-		q_vector->rx.rx_ring = rx_ring;
-		rx_ring->q_vector = q_vector;
-		rx_ring->next = NULL;
-		rx_ring->netdev = repr->netdev;
-	}
-}
-
-/**
  * ice_eswitch_release_repr - clear PR VSI configuration
  * @pf: poiner to PF struct
  * @repr: pointer to PR
@@ -225,8 +170,6 @@ ice_eswitch_release_repr(struct ice_pf *pf, struct ice_repr *repr)
 	repr->dst = NULL;
 	ice_fltr_add_mac_and_broadcast(vsi, repr->parent_mac,
 				       ICE_FWD_TO_VSI);
-
-	netif_napi_del(&repr->q_vector->napi);
 }
 
 /**
@@ -252,15 +195,11 @@ static int ice_eswitch_setup_repr(struct ice_pf *pf, struct ice_repr *repr)
 	if (ice_vsi_add_vlan_zero(vsi))
 		goto err_update_security;
 
-	netif_napi_add(repr->netdev, &repr->q_vector->napi,
-		       ice_napi_poll);
-
-	netif_keep_dst(repr->netdev);
+	netif_keep_dst(ctrl_vsi->netdev);
 
 	dst = repr->dst;
 	dst->u.port_info.port_id = vsi->vsi_num;
-	dst->u.port_info.lower_dev = repr->netdev;
-	ice_repr_set_traffic_vsi(repr, ctrl_vsi);
+	dst->u.port_info.lower_dev = ctrl_vsi->netdev;
 
 	return 0;
 
@@ -336,9 +275,9 @@ ice_eswitch_port_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	skb_dst_drop(skb);
 	dst_hold((struct dst_entry *)repr->dst);
 	skb_dst_set(skb, (struct dst_entry *)repr->dst);
-	skb->queue_mapping = repr->q_id;
+	skb->dev = repr->dst->u.port_info.lower_dev;
 
-	return ice_start_xmit(skb, netdev);
+	return dev_queue_xmit(skb);
 }
 
 /**
@@ -404,32 +343,6 @@ ice_eswitch_vsi_setup(struct ice_pf *pf, struct ice_port_info *pi)
 	params.flags = ICE_VSI_FLAG_INIT;
 
 	return ice_vsi_setup(pf, &params);
-}
-
-/**
- * ice_eswitch_napi_enable - enable NAPI for all port representors
- * @reprs: xarray of reprs
- */
-static void ice_eswitch_napi_enable(struct xarray *reprs)
-{
-	struct ice_repr *repr;
-	unsigned long id;
-
-	xa_for_each(reprs, id, repr)
-		napi_enable(&repr->q_vector->napi);
-}
-
-/**
- * ice_eswitch_napi_disable - disable NAPI for all port representors
- * @reprs: xarray of reprs
- */
-static void ice_eswitch_napi_disable(struct xarray *reprs)
-{
-	struct ice_repr *repr;
-	unsigned long id;
-
-	xa_for_each(reprs, id, repr)
-		napi_disable(&repr->q_vector->napi);
 }
 
 /**
@@ -620,12 +533,10 @@ static void ice_eswitch_stop_reprs(struct ice_pf *pf)
 {
 	ice_eswitch_del_sp_rules(pf);
 	ice_eswitch_stop_all_tx_queues(pf);
-	ice_eswitch_napi_disable(&pf->eswitch.reprs);
 }
 
 static void ice_eswitch_start_reprs(struct ice_pf *pf)
 {
-	ice_eswitch_napi_enable(&pf->eswitch.reprs);
 	ice_eswitch_start_all_tx_queues(pf);
 	ice_eswitch_add_sp_rules(pf);
 }
@@ -646,13 +557,13 @@ ice_eswitch_attach(struct ice_pf *pf, struct ice_repr *repr, unsigned long *id)
 
 	ice_eswitch_stop_reprs(pf);
 
-	err = repr->ops.add(repr);
-	if (err)
-		goto err_create_repr;
-
 	err = ice_eswitch_setup_repr(pf, repr);
 	if (err)
 		goto err_setup_repr;
+
+	err = repr->ops.add(repr);
+	if (err)
+		goto err_create_repr;
 
 	err = xa_alloc(&pf->eswitch.reprs, &repr->id, repr,
 		       XA_LIMIT(1, INT_MAX), GFP_KERNEL);
@@ -661,7 +572,6 @@ ice_eswitch_attach(struct ice_pf *pf, struct ice_repr *repr, unsigned long *id)
 
 	*id = repr->id;
 
-	ice_eswitch_remap_rings_to_vectors(&pf->eswitch);
 	ice_eswitch_start_reprs(pf);
 
 	return 0;
