@@ -111,26 +111,23 @@ static int ice_eswitch_setup_env(struct ice_pf *pf)
 	__dev_mc_unsync(netdev, NULL);
 	netif_addr_unlock_bh(netdev);
 
-	if (ice_vsi_add_vlan_zero(uplink_vsi))
+	if (ice_vsi_add_vlan_zero(ctrl_vsi))
 		goto err_def_rx;
 
-	if (!ice_is_dflt_vsi_in_use(uplink_vsi->port_info)) {
-		if (ice_set_dflt_vsi(uplink_vsi))
+	if (!ice_is_dflt_vsi_in_use(ctrl_vsi->port_info)) {
+		if (ice_set_dflt_vsi(ctrl_vsi))
 			goto err_def_rx;
 		rule_added = true;
 	}
 
-	vlan_ops = ice_get_compat_vsi_vlan_ops(uplink_vsi);
-	if (vlan_ops->dis_rx_filtering(uplink_vsi))
+	vlan_ops = ice_get_compat_vsi_vlan_ops(ctrl_vsi);
+	if (vlan_ops->dis_rx_filtering(ctrl_vsi))
 		goto err_dis_rx;
-
-	if (ice_vsi_update_security(uplink_vsi, ice_vsi_ctx_set_allow_override))
-		goto err_override_uplink;
 
 	if (ice_vsi_update_security(ctrl_vsi, ice_vsi_ctx_set_allow_override))
 		goto err_override_control;
 
-	if (ice_vsi_update_local_lb(uplink_vsi, true))
+	if (ice_vsi_update_local_lb(ctrl_vsi, true))
 		goto err_override_local_lb;
 
 	return 0;
@@ -138,12 +135,10 @@ static int ice_eswitch_setup_env(struct ice_pf *pf)
 err_override_local_lb:
 	ice_vsi_update_security(ctrl_vsi, ice_vsi_ctx_clear_allow_override);
 err_override_control:
-	ice_vsi_update_security(uplink_vsi, ice_vsi_ctx_clear_allow_override);
-err_override_uplink:
-	vlan_ops->ena_rx_filtering(uplink_vsi);
+	vlan_ops->ena_rx_filtering(ctrl_vsi);
 err_dis_rx:
 	if (rule_added)
-		ice_clear_dflt_vsi(uplink_vsi);
+		ice_clear_dflt_vsi(ctrl_vsi);
 err_def_rx:
 	ice_fltr_add_mac_and_broadcast(uplink_vsi,
 				       uplink_vsi->port_info->mac.perm_addr,
@@ -314,15 +309,8 @@ static void ice_eswitch_release_env(struct ice_pf *pf)
 {
 	struct ice_vsi *uplink_vsi = pf->eswitch.uplink_vsi;
 	struct ice_vsi *ctrl_vsi = pf->eswitch.control_vsi;
-	struct ice_vsi_vlan_ops *vlan_ops;
 
-	vlan_ops = ice_get_compat_vsi_vlan_ops(uplink_vsi);
-
-	ice_vsi_update_local_lb(uplink_vsi, false);
-	ice_vsi_update_security(ctrl_vsi, ice_vsi_ctx_clear_allow_override);
-	ice_vsi_update_security(uplink_vsi, ice_vsi_ctx_clear_allow_override);
-	vlan_ops->ena_rx_filtering(uplink_vsi);
-	ice_clear_dflt_vsi(uplink_vsi);
+	ice_clear_dflt_vsi(ctrl_vsi);
 	ice_fltr_add_mac_and_broadcast(uplink_vsi,
 				       uplink_vsi->port_info->mac.perm_addr,
 				       ICE_FWD_TO_VSI);
