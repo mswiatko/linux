@@ -410,7 +410,6 @@ static unsigned int ice_rx_offset(struct ice_rx_ring *rx_ring)
 static int ice_setup_rx_ctx(struct ice_rx_ring *ring)
 {
 	struct ice_vsi *vsi = ring->vsi;
-	u32 rxdid = ICE_RXDID_FLEX_NIC;
 	struct ice_rlan_ctx rlan_ctx;
 	struct ice_hw *hw;
 	u16 pf_q;
@@ -488,11 +487,21 @@ static int ice_setup_rx_ctx(struct ice_rx_ring *ring)
 	 * setting to 0x03 to ensure profile is programming if prev context is
 	 * of same priority
 	 */
-	if (vsi->type != ICE_VSI_VF)
-		ice_write_qrxflxp_cntxt(hw, pf_q, rxdid, 0x3, true);
-	else
+	switch (vsi->type) {
+	case ICE_VSI_VF:
 		ice_write_qrxflxp_cntxt(hw, pf_q, ICE_RXDID_LEGACY_1, 0x3,
 					false);
+		break;
+	case ICE_VSI_SWITCHDEV_CTRL:
+		ring->flags |= ICE_RX_FLAGS_MULTIDEV;
+		ice_write_qrxflxp_cntxt(hw, pf_q, ICE_RXDID_FLEX_NIC_2, 0x3,
+					true);
+		break;
+	default:
+		ice_write_qrxflxp_cntxt(hw, pf_q, ICE_RXDID_FLEX_NIC, 0x3,
+					true);
+		break;
+	}
 
 	/* Absolute queue number out of 2K needs to be passed */
 	err = ice_write_rxq_ctx(hw, &rlan_ctx, pf_q);
