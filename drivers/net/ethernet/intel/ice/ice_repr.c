@@ -291,7 +291,6 @@ static void ice_repr_remove_node(struct devlink_port *devlink_port)
  */
 static void ice_repr_rem(struct ice_repr *repr)
 {
-	kfree(repr->q_vector);
 	free_netdev(repr->netdev);
 	kfree(repr);
 }
@@ -331,7 +330,6 @@ static void ice_repr_set_tx_topology(struct ice_pf *pf)
 static struct ice_repr *
 ice_repr_add(struct ice_pf *pf, struct ice_vsi *src_vsi, const u8 *parent_mac)
 {
-	struct ice_q_vector *q_vector;
 	struct ice_netdev_priv *np;
 	struct ice_repr *repr;
 	int err;
@@ -347,23 +345,14 @@ ice_repr_add(struct ice_pf *pf, struct ice_vsi *src_vsi, const u8 *parent_mac)
 	}
 
 	repr->src_vsi = src_vsi;
+	repr->id = src_vsi->vsi_num;
 	np = netdev_priv(repr->netdev);
 	np->repr = repr;
-
-	q_vector = kzalloc(sizeof(*q_vector), GFP_KERNEL);
-	if (!q_vector) {
-		err = -ENOMEM;
-		goto err_alloc_q_vector;
-	}
-	repr->q_vector = q_vector;
-	repr->q_id = repr->id;
 
 	ether_addr_copy(repr->parent_mac, parent_mac);
 
 	return repr;
 
-err_alloc_q_vector:
-	free_netdev(repr->netdev);
 err_alloc:
 	kfree(repr);
 	return ERR_PTR(err);
@@ -438,16 +427,4 @@ void ice_repr_stop_tx_queues(struct ice_repr *repr)
 {
 	netif_carrier_off(repr->netdev);
 	netif_tx_stop_all_queues(repr->netdev);
-}
-
-/**
- * ice_repr_set_traffic_vsi - set traffic VSI for port representor
- * @repr: repr on with VSI will be set
- * @vsi: pointer to VSI that will be used by port representor to pass traffic
- */
-void ice_repr_set_traffic_vsi(struct ice_repr *repr, struct ice_vsi *vsi)
-{
-	struct ice_netdev_priv *np = netdev_priv(repr->netdev);
-
-	np->vsi = vsi;
 }

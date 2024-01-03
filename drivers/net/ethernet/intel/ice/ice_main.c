@@ -7077,13 +7077,11 @@ int ice_down(struct ice_vsi *vsi)
 
 	WARN_ON(!test_bit(ICE_VSI_DOWN, vsi->state));
 
-	if (vsi->netdev && vsi->type == ICE_VSI_PF) {
+	if (vsi->netdev) {
 		vlan_err = ice_vsi_del_vlan_zero(vsi);
 		ice_ptp_link_change(vsi->back, vsi->back->hw.pf_id, false);
 		netif_carrier_off(vsi->netdev);
 		netif_tx_disable(vsi->netdev);
-	} else if (vsi->type == ICE_VSI_SWITCHDEV_CTRL) {
-		ice_eswitch_stop_all_tx_queues(vsi->back);
 	}
 
 	ice_vsi_dis_irq(vsi);
