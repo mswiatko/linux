@@ -1563,6 +1563,22 @@ ethtool_exit:
 	return ret;
 }
 
+/**
+ * ice_get_sf_sset_count - get number of stats to display for specified netdev
+ * of subfunction flavor
+ * @netdev: network interface device structure
+ * @sset: set of statistics to display
+ */
+static int ice_get_sf_sset_count(struct net_device *netdev, int sset)
+{
+	switch (sset) {
+	case ETH_SS_STATS:
+		return ICE_VSI_STATS_LEN + ice_q_stats_len(netdev);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 static int ice_get_sset_count(struct net_device *netdev, int sset)
 {
 	switch (sset) {
@@ -4001,7 +4017,7 @@ ice_repr_get_drvinfo(struct net_device *netdev,
 {
 	struct ice_repr *repr = ice_netdev_to_repr(netdev);
 
-	if (ice_check_vf_ready_for_cfg(repr->vf))
+	if (repr->ops.ready(repr))
 		return;
 
 	__ice_get_drvinfo(netdev, drvinfo, repr->src_vsi);
@@ -4013,8 +4029,7 @@ ice_repr_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 	struct ice_repr *repr = ice_netdev_to_repr(netdev);
 
 	/* for port representors only ETH_SS_STATS is supported */
-	if (ice_check_vf_ready_for_cfg(repr->vf) ||
-	    stringset != ETH_SS_STATS)
+	if (repr->ops.ready(repr) || stringset != ETH_SS_STATS)
 		return;
 
 	__ice_get_strings(netdev, stringset, data, repr->src_vsi);
@@ -4027,7 +4042,7 @@ ice_repr_get_ethtool_stats(struct net_device *netdev,
 {
 	struct ice_repr *repr = ice_netdev_to_repr(netdev);
 
-	if (ice_check_vf_ready_for_cfg(repr->vf))
+	if (repr->ops.ready(repr))
 		return;
 
 	__ice_get_ethtool_stats(netdev, stats, data, repr->src_vsi);
@@ -4289,6 +4304,17 @@ static const struct ethtool_ops ice_ethtool_safe_mode_ops = {
 	.get_channels		= ice_get_channels,
 };
 
+static const struct ethtool_ops ice_sf_ethtool_ops = {
+	.get_drvinfo		= ice_get_drvinfo,
+	.get_link		= ethtool_op_get_link,
+	.get_strings		= ice_get_strings,
+	.get_ethtool_stats	= ice_get_ethtool_stats,
+	.get_sset_count		= ice_get_sf_sset_count,
+	.get_ringparam		= ice_get_ringparam,
+	.set_ringparam		= ice_set_ringparam,
+	.get_channels		= ice_get_channels,
+};
+
 /**
  * ice_set_ethtool_safe_mode_ops - setup safe mode ethtool ops
  * @netdev: network interface device structure
@@ -4324,4 +4350,13 @@ void ice_set_ethtool_repr_ops(struct net_device *netdev)
 void ice_set_ethtool_ops(struct net_device *netdev)
 {
 	netdev->ethtool_ops = &ice_ethtool_ops;
+}
+
+/**
+ * ice_set_ethtool_sf_ops - setup subfunction ethtool ops
+ * @netdev: network interface device structure
+ */
+void ice_set_ethtool_sf_ops(struct net_device *netdev)
+{
+	netdev->ethtool_ops = &ice_sf_ethtool_ops;
 }
