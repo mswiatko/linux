@@ -41,4 +41,11 @@ config FWCTL_PDS
 	  DSC hardware family.
 
 	  If you don't know what to do here, say N.
+
+config FWCTL_IETH
+	tristate "Intel ice and ixd fwctl driver"
+	depends on ICE || IXD
+	help
+	  Access debug and configuration information of the Intel ethernet cards
+	  supported by ice and ixd driver
 endif
