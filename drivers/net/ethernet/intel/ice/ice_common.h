@@ -370,4 +370,6 @@ int ice_read_pca9575_reg(struct ice_hw *hw, u8 offset, u8 *data);
 bool ice_fw_supports_report_dflt_cfg(struct ice_hw *hw);
 int ice_read_cgu_reg(struct ice_hw *hw, u32 addr, u32 *val);
 int ice_write_cgu_reg(struct ice_hw *hw, u32 addr, u32 val);
+int ice_ctlq_fwctl_req(struct libie_ieth_dev *ieth, void *desc, size_t desc_len,
+		       void *in, size_t in_len, size_t out_len);
 #endif /* _ICE_COMMON_H_ */

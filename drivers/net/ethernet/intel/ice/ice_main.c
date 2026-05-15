@@ -548,6 +548,7 @@ ice_prepare_for_reset(struct ice_pf *pf, enum ice_reset_req reset_type)
 
 	synchronize_irq(pf->oicr_irq.virq);
 
+	ice_unplug_fwctl(pf);
 	ice_unplug_aux_dev(pf);
 
 	/* Notify VFs of impending reset */
@@ -5091,6 +5092,8 @@ int ice_load(struct ice_pf *pf)
 
 	ice_service_task_restart(pf);
 
+	ice_plug_fwctl(pf);
+
 	clear_bit(ICE_DOWN, pf->state);
 
 	return 0;
@@ -5120,6 +5123,7 @@ void ice_unload(struct ice_pf *pf)
 
 	devl_assert_locked(priv_to_devlink(pf));
 
+	ice_unplug_fwctl(pf);
 	ice_unplug_aux_dev(pf);
 	ice_deinit_rdma(pf);
 	ice_deinit_features(pf);
@@ -5549,6 +5553,7 @@ static int ice_suspend(struct device *dev)
 	 */
 	disabled = ice_service_task_stop(pf);
 
+	ice_unplug_fwctl(pf);
 	ice_unplug_aux_dev(pf);
 	ice_deinit_rdma(pf);
 

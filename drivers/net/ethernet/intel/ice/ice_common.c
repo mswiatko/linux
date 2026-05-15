@@ -1877,6 +1877,14 @@ ice_sq_send_cmd_retry(struct ice_hw *hw, struct ice_ctl_q_info *cq,
 	return status;
 }
 
+int ice_ctlq_fwctl_req(struct libie_ieth_dev *ieth, void *desc, size_t desc_len,
+		       void *in, size_t in_len, size_t out_len)
+{
+	struct ice_pf *pf = container_of(ieth, struct ice_pf, idev);
+
+	return ice_aq_send_cmd(&pf->hw, desc, in, in_len, NULL);
+}
+
 /**
  * ice_aq_send_cmd - send FW Admin Queue command to FW Admin Queue
  * @hw: pointer to the HW struct

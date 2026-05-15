@@ -462,3 +462,32 @@ void ice_deinit_rdma(struct ice_pf *pf)
 	kfree(pf->cdev_info);
 	pf->cdev_info = NULL;
 }
+
+void ice_plug_fwctl(struct ice_pf *pf)
+{
+	struct libie_ieth_dev *idev = &pf->idev;
+
+	idev->type = LIBIE_IETH_ICE;
+
+	idev->aux.name = "fwctl";
+	idev->aux.id = pf->hw.pf_id;
+	idev->aux.dev.parent = &pf->pdev->dev;
+	/* idev is embedded in ice_pf, no need to free */
+	idev->aux.dev.release = NULL;
+
+	auxiliary_device_init(&idev->aux);
+	auxiliary_device_add(&idev->aux);
+
+	set_bit(ICE_FLAG_FWCTL_DEV_CREATED, pf->flags);
+}
+
+void ice_unplug_fwctl(struct ice_pf *pf)
+{
+	struct libie_ieth_dev *idev = &pf->idev;
+
+	if (!test_and_clear_bit(ICE_FLAG_FWCTL_DEV_CREATED, pf->flags))
+		return;
+
+	auxiliary_device_delete(&idev->aux);
+	auxiliary_device_uninit(&idev->aux);
+}

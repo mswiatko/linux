@@ -36,6 +36,7 @@
 #include <linux/bpf.h>
 #include <linux/btf.h>
 #include <linux/auxiliary_bus.h>
+#include <linux/intel/libie/dev.h>
 #include <linux/intel/virtchnl.h>
 #include <linux/cpu_rmap.h>
 #include <linux/dim.h>
@@ -519,6 +520,7 @@ enum ice_pf_flags {
 	ICE_FLAG_PLUG_AUX_DEV,
 	ICE_FLAG_UNPLUG_AUX_DEV,
 	ICE_FLAG_AUX_DEV_CREATED,
+	ICE_FLAG_FWCTL_DEV_CREATED,
 	ICE_FLAG_MTU_CHANGED,
 	ICE_FLAG_GNSS,			/* GNSS successfully initialized */
 	ICE_FLAG_DPLL,			/* SyncE/PTP dplls initialized */
@@ -670,6 +672,8 @@ struct ice_pf {
 	struct iidc_rdma_core_dev_info *cdev_info;
 
 	u8 num_quanta_prof_used;
+
+	struct libie_ieth_dev idev;
 };
 
 extern struct workqueue_struct *ice_lag_wq;
@@ -1009,6 +1013,8 @@ int ice_schedule_reset(struct ice_pf *pf, enum ice_reset_req reset);
 void ice_print_link_msg(struct ice_vsi *vsi, bool isup);
 int ice_plug_aux_dev(struct ice_pf *pf);
 void ice_unplug_aux_dev(struct ice_pf *pf);
+void ice_plug_fwctl(struct ice_pf *pf);
+void ice_unplug_fwctl(struct ice_pf *pf);
 void ice_rdma_finalize_setup(struct ice_pf *pf);
 int ice_init_rdma(struct ice_pf *pf);
 void ice_deinit_rdma(struct ice_pf *pf);
