@@ -30,4 +30,6 @@ int ixd_ctlq_do_req(struct ixd_adapter *adapter,
 		    const struct ixd_ctlq_req *req);
 void ixd_ctlq_rx_task(struct work_struct *work);
 
+int ixd_ctlq_fwctl_req(struct libie_ieth_dev *ieth, void *desc, size_t desc_len,
+		       void *in, size_t in_len, size_t out_len);
 #endif /* _IXD_CTLQ_H_ */

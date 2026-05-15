@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (C) 2025 Intel Corporation */
 
+#include <linux/auxiliary_bus.h>
 #include "ixd.h"
 #include "ixd_ctlq.h"
 #include "ixd_lan_regs.h"
@@ -10,6 +11,31 @@ MODULE_DESCRIPTION("Intel(R) Control Plane Function Device Driver");
 MODULE_IMPORT_NS("LIBIE_CP");
 MODULE_IMPORT_NS("LIBIE_PCI");
 MODULE_LICENSE("GPL");
+
+static void ixd_plug_fwctl(struct ixd_adapter *adapter)
+{
+	struct libie_ieth_dev *idev = &adapter->idev;
+
+	idev->type = LIBIE_IETH_IXD;
+
+	idev->aux.name = "fwctl";
+	idev->fwctl.send = ixd_ctlq_fwctl_req;
+	/* In ixd queue there is already patch which has variable for id */
+	idev->aux.id = 0;
+	idev->aux.dev.parent = ixd_to_dev(adapter);
+	idev->aux.dev.release = NULL;
+
+	auxiliary_device_init(&idev->aux);
+	auxiliary_device_add(&idev->aux);
+}
+
+static void ixd_unplug_fwctl(struct ixd_adapter *adapter)
+{
+	struct libie_ieth_dev *idev = &adapter->idev;
+
+	auxiliary_device_delete(&idev->aux);
+	auxiliary_device_uninit(&idev->aux);
+}
 
 /**
  * ixd_remove - remove a CPF PCI device
@@ -22,6 +48,7 @@ static void ixd_remove(struct pci_dev *pdev)
 	/* Do not mix removal with (re)initialization */
 	cancel_delayed_work_sync(&adapter->init_task.init_work);
 
+	ixd_unplug_fwctl(adapter);
 	ixd_devlink_unregister(adapter);
 
 	/* Leave the device clean on exit */
@@ -123,6 +150,7 @@ static int ixd_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			   msecs_to_jiffies(500));
 
 	ixd_devlink_register(adapter);
+	ixd_plug_fwctl(adapter);
 
 	return 0;
 

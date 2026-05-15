@@ -5,6 +5,7 @@
 #define _IXD_H_
 
 #include <linux/intel/libie/controlq.h>
+#include <linux/intel/libie/dev.h>
 
 /**
  * struct ixd_adapter - Data structure representing a CPF
@@ -16,6 +17,7 @@
  * @arq: Receive control queue info
  * @vc_ver: Negotiated virtchnl version
  * @caps: Negotiated virtchnl capabilities
+ * @idev: Generic intel ethernet device
  */
 struct ixd_adapter {
 	struct libie_ctlq_ctx cp_ctx;
@@ -33,6 +35,7 @@ struct ixd_adapter {
 		u32 minor;
 	} vc_ver;
 	struct virtchnl2_get_capabilities caps;
+	struct libie_ieth_dev idev;
 };
 
 /**

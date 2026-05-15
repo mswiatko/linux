@@ -51,6 +51,55 @@ static void ixd_ctlq_init_sparams(struct ixd_adapter *adapter,
 	};
 }
 
+/* Structure needed to pass context, only used here. */
+struct ixd_fwctl_ctx {
+	void *in;
+	size_t in_len;
+	size_t out_len;
+};
+
+static void ixd_fill_fwctl(struct ixd_adapter *adapter, void *send_buff,
+			   void *ctx)
+{
+	struct ixd_fwctl_ctx *fwctl_ctx = ctx;
+
+	memcpy(send_buff, fwctl_ctx->in, fwctl_ctx->in_len);
+}
+
+static int ixd_handle_fwctl(struct ixd_adapter *adapter, void *recv_buff,
+			    size_t recv_size, void *ctx)
+{
+	struct ixd_fwctl_ctx *fwctl_ctx = ctx;
+	size_t size;
+
+	/* Trim if needed. Write back to the same buffor */
+	size = min(recv_size, fwctl_ctx->out_len);
+	memcpy(fwctl_ctx->in, recv_buff, size);
+
+	return 0;
+}
+
+int ixd_ctlq_fwctl_req(struct libie_ieth_dev *ieth, void *desc, size_t desc_len,
+		       void *in, size_t in_len, size_t out_len)
+{
+	struct ixd_adapter *adapter =
+		container_of(ieth, struct ixd_adapter, idev);
+	struct ixd_fwctl_ctx fwctl_ctx = {
+		.in = in,
+		.in_len = in_len,
+		.out_len = out_len,
+	};
+	const struct ixd_ctlq_req req = {
+		.opcode = *(u16 *)desc,
+		.send_size = in_len,
+		.ctx = &fwctl_ctx,
+		.send_buff_init = ixd_fill_fwctl,
+		.recv_process = ixd_handle_fwctl,
+	};
+
+	return ixd_ctlq_do_req(adapter, &req);
+}
+
 /**
  * ixd_ctlq_do_req - Perform a standard virtchnl request
  * @adapter: The adapter with initialized mailbox
