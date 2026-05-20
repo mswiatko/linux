@@ -52,7 +52,8 @@ static void *iethctl_info(struct fwctl_uctx *uctx, size_t *length)
 static bool iethctl_validate_rpc(const struct fwctl_rpc_ieth *rpc,
 				 enum fwctl_rpc_scope scope)
 {
-	return false;
+	/* TODO: validate opcode here, we need to know what we want to support */
+	return true;
 }
 
 static void *iethctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
