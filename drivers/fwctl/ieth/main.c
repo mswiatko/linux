@@ -4,6 +4,7 @@
  */
 #include <linux/auxiliary_bus.h>
 #include <linux/fwctl.h>
+#include <linux/intel/libie/dev.h>
 #include <uapi/fwctl/fwctl.h>
 #include <uapi/fwctl/ieth.h>
 
@@ -14,6 +15,7 @@ struct iethctl_uctx {
 
 struct iethctl_dev {
 	struct fwctl_device fwctl;
+	struct libie_ieth_dev *ieth_dev;
 };
 DEFINE_FREE(iethctl, struct iethctl_dev *, if (_T) fwctl_put(&_T->fwctl));
 
@@ -47,7 +49,8 @@ static void *iethctl_info(struct fwctl_uctx *uctx, size_t *length)
 	return info;
 }
 
-static bool iethctl_validate_rpc(const void *in, enum fwctl_rpc_scope scope)
+static bool iethctl_validate_rpc(const struct fwctl_rpc_ieth *rpc,
+				 enum fwctl_rpc_scope scope)
 {
 	return false;
 }
@@ -55,10 +58,78 @@ static bool iethctl_validate_rpc(const void *in, enum fwctl_rpc_scope scope)
 static void *iethctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 			    void *rpc_in, size_t in_len, size_t *out_len)
 {
+	struct iethctl_dev *ctldev =
+		container_of(uctx->fwctl, struct iethctl_dev, fwctl);
+	struct libie_ieth_dev *ieth_dev = ctldev->ieth_dev;
+	struct fwctl_rpc_ieth *rpc = rpc_in;
+	void *buff = NULL, *desc = NULL;
+	size_t buff_size;
+	int ret;
+
 	if (!iethctl_validate_rpc(rpc_in, scope))
 		return ERR_PTR(-EPERM);
 
-	return ERR_PTR(-EOPNOTSUPP);
+	buff_size = max(in_len, *out_len);
+	if (buff_size) {
+		buff = kzalloc(buff_size, GFP_KERNEL);
+		if (!buff)
+			return ERR_PTR(-ENOMEM);
+	}
+
+	if (in_len) {
+		if (copy_from_user(buff, u64_to_user_ptr(rpc->payload),
+				   in_len)) {
+			ret = -EFAULT;
+			goto free_buff;
+		}
+	}
+
+	if (rpc->desc_len) {
+		desc = kzalloc(rpc->desc_len, GFP_KERNEL);
+		if (!desc) {
+			ret = -ENOMEM;
+			goto free_buff;
+		}
+
+		if (copy_from_user(desc, u64_to_user_ptr(rpc->desc),
+				   rpc->desc_len)) {
+			ret = -EFAULT;
+			goto free_desc;
+		}
+	}
+
+	ret = ieth_dev->fwctl.send(ieth_dev, desc, rpc->desc_len, buff, in_len,
+				   buff_size);
+	if (ret)
+		goto free_desc;
+
+	if (*out_len) {
+		if (copy_to_user(u64_to_user_ptr(rpc->payload), buff,
+				 *out_len)) {
+			ret = -EFAULT;
+			goto free_desc;
+		}
+	}
+
+	if (rpc->desc_len) {
+		if (copy_to_user(u64_to_user_ptr(rpc->desc), desc,
+				 rpc->desc_len)) {
+			ret = -EFAULT;
+			goto free_desc;
+		}
+	}
+
+free_desc:
+	if (rpc->desc_len)
+		kfree(desc);
+free_buff:
+	if (buff_size)
+		kfree(buff);
+
+	if (ret)
+		return ERR_PTR(ret);
+
+	return rpc;
 }
 
 static const struct fwctl_ops iethctl_ops = {
@@ -75,10 +146,14 @@ static int iethctl_probe(struct auxiliary_device *adev,
 	struct iethctl_dev *ctldev __free(iethctl) =
 		fwctl_alloc_device(&adev->dev, &iethctl_ops, struct iethctl_dev,
 				   fwctl);
+	struct libie_ieth_dev *ieth_dev =
+		container_of(adev, struct libie_ieth_dev, aux);
 	int ret;
 
 	if (!ctldev)
 		return -ENOMEM;
+
+	ctldev->ieth_dev = ieth_dev;
 
 	ret = fwctl_register(&ctldev->fwctl);
 	if (ret)

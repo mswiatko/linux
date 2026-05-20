@@ -22,4 +22,21 @@ enum fwctl_ieth_commands {
 struct fwctl_info_ieth {
 	__u32 uctx_caps;
 };
+
+/**
+ * struct fwctl_rpc_ieth - fwctl message exchange structure
+ * @opcode: message opcode
+ * @flags: configuration flags
+ * @desc_len: length of descriptor
+ * @payload_len: length of payload
+ * @desc: address of descriptor buffer
+ * @payload: address of data buffer
+ */
+struct fwctl_rpc_ieth {
+	__u32 opcode;
+	__u32 desc_len;
+	__u32 payload_len;
+	__aligned_u64 desc;
+	__aligned_u64 payload;
+};
 #endif
